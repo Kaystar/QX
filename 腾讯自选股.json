@@ -1,0 +1,29 @@
+{
+  "name": "腾讯自选股",
+  "author": "留个名字",
+  "note": "xx 导出的任务订阅。该订阅适用于 elecV2P，与其他软件并不兼容。相关说明参考：https://github.com/elecV2/elecV2P-dei/tree/master/docs/06-task.md",
+  "date": "2021-11-29 21:21:33",
+  "type": "task",
+  "list": [
+    {
+      "name": "腾讯自选股",
+      "type": "cron",
+      "time": "10 0 16 * * *",
+      "running": true,
+      "job": {
+        "type": "runjs",
+        "target": "https://raw.githubusercontent.com/Kaystar/QX/master/js/txstockqx.js"
+      }
+    },
+    {
+      "name": "自选股养牛",
+      "type": "cron",
+      "time": "20 25 15 * * *",
+      "running": true,
+      "job": {
+        "type": "runjs",
+        "target": "https://raw.githubusercontent.com/CenBoMin/GithubSync/main/TXSTOCK/txstockcow.js"
+      }
+    }
+  ]
+}
