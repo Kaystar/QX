@@ -114,7 +114,7 @@ async function GetBody() {
 
     if ($request && $request.url.indexOf("functionId=drawShopGift") >= 0) {
 
-        if (typeof $request.body !== 'undefined'){
+        if (typeof $request.body !== ''){
              modifiedBody = $request.body;
             const gzylBodyVal = modifiedBody;
             if (gzylBodyVal) $.setdata(gzylBodyVal, "PKC_GZYL");
