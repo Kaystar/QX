@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<actor-mapping>
+  <actor>
+    <a zh_cn="阿部涼音11111" zh_tw="阿部涼音" jp="阿部涼音" keyword="阿部涼音" bio_graphy="阿部涼音（あべすずね / Abe Suzune），身高157cm，三围B88/W58/H87，罩杯B，兴趣：器械体操，鞋码S。" verified="1" />
+    <a zh_cn="阿部真琴22222" zh_tw="阿部真琴" jp="阿部真琴" keyword="阿部真琴" bio_graphy="阿部真琴（あべまこと / Abe Makoto），身高153cm，三围B83/W55/H80。" verified="1" />
+  </actor>
+  <actor-blacklist />
+</actor-mapping>
