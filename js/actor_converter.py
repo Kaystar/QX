@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-# ql author: actor_cleaner
-# ql name: 🎬 演员显示语言修改
-# ql cron: 0 0 2 * * *
+# ql author: actor_converter
+# ql name: 🌐 演员显示语言修改
+# ql cron:  0 2 * * *
 # ql desc: 自动遍历全盘NFO，根据五维立体交叉核对雷达将演员、Tag、Genre规范化为指定语系
 # ==================== 🛠️ 青龙环境变量配置指南 ====================
 # 1. MEDIA_DIR        : 媒体库挂载路径。  [默认值: /movies]
@@ -333,7 +333,7 @@ def main():
         print("==================================================================\n")
 
         # 手机卡片通知：只有核心总账概要！
-        title_notify = "🎬 演员显示语言修改"
+        title_notify = "🌐 演员显示语言修改"
         content = f"🗣️ 语言语系：【{LANG_CHOICE}】"
         content += f"\n⚙️ 修改模式：【{MODE_NAME}】"
         content += f"\n📊 修改结果：【更新nfo文件: {TOTAL_MODIFIED_NFOS} 个，关联番号: {len(TOTAL_CIDS_SET)} 个】"
