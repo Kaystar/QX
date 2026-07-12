@@ -1,3 +1,16 @@
+# -*- coding: utf-8 -*-
+# ql author: actor_mapping_sync
+# ql name: 🔄 演员映射文件同步与合并
+# ql cron: 0 6 * * *
+# ql desc: 从GitHub获取演员映射XML，与本地自定义修改合并，生成最终映射文件并发送通知
+# ==================== 🛠️ 青龙环境变量配置指南 ====================
+# 1. ACTOR_REPO_URL    : GitHub远程演员映射XML文件的URL。  [默认值: https://githubusercontent.com]
+# 2. ACTOR_LOCAL_FILE  : 本地存储的GitHub下载文件名称。    [默认值: github-downloaded.xml]
+# 3. ACTOR_MY_CHANGES  : 本地自定义修改的XML文件名称。    [默认值: my-changes.xml]
+# 4. ACTOR_FINAL_OUTPUT: 最终合并输出的文件名称。          [默认值: final-actor-mapping.xml]
+# 5. ACTOR_OUTPUT_DIR  : 输出文件的目录路径。              [默认值: 空(当前目录)]
+# =================================================================
+
 import os
 import xml.etree.ElementTree as ET
 import requests
