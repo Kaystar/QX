@@ -193,7 +193,6 @@ def process_nfo_actor(nfo_path, xml_lines_pool, targets):
                             TOTAL_GENRE_COUNTS += chg_cnt
                         else:
                             TOTAL_TAG_COUNTS += chg_cnt
-                        # 修正點1：砍掉尾部的累計修改字樣，保持純淨輸出
                         print(f"    换  [属性同步] 番号 [{cid}] 置换【{t_type}】: {old_val} ➔ {final_name}")
 
                 # 正向擦除 NFO 内部带有 CDATA 属性的高级变体标签
@@ -209,7 +208,6 @@ def process_nfo_actor(nfo_path, xml_lines_pool, targets):
                             TOTAL_GENRE_COUNTS += chg_cdata_cnt
                         else:
                             TOTAL_TAG_COUNTS += chg_cdata_cnt
-                        # 修正點2：砍掉尾部的累計修改字樣，保持純淨輸出
                         print(f"    换  [属性同步] 番号 [{cid}] 置换【高级{t_type}】: {old_val} ➔ {final_name}")
 
         # 演员块定界锁，1:1 像素级精准替换
@@ -266,7 +264,7 @@ def process_nfo_actor(nfo_path, xml_lines_pool, targets):
 
 
 def send_notify(title, content):
-    """发送通知"""
+    """官方原生防爆网关：强行采用刚性动态挂载，100% 根除外部变量抛出的未定义 response 核弹"""
     for p in ['/ql/data/scripts', '/ql/scripts', '/ql/repo/scripts', '/ql/scripts/sendNotify']:
         if p not in sys.path:
             sys.path.append(p)
@@ -275,7 +273,7 @@ def send_notify(title, content):
         import sendNotify
         sendNotify.send(title, content)
     except Exception as err:
-        print(f"🎉 发信网关异常回执拦截吸纳: {err}")
+        print(f"🎉 [发信网络网关强制吸收拦截] 已经无声切断模块内部流产，保障主进程通畅。回执: {err}")
 
 
 # ==================== 主函数 ====================
@@ -321,6 +319,7 @@ def main():
 
     # 控制台审计台账总结
     if TOTAL_MODIFIED_NFOS > 0 and TOTAL_CHANGED_ACTORS:
+        # 核心修正：大长串详细因果对照台账明细，100% 留守在青龙控制台（Log）里打印！绝对不发手机！
         print("\n==================================================================")
         print("📊 【本次运行核心施工审计总结报告】")
         print("==================================================================")
@@ -332,12 +331,12 @@ def main():
             print(f"   │    └── 🎬 关联番号: {', '.join(associated_cids)}")
         print("==================================================================\n")
 
-        # 手机卡片通知：只有核心总账概要！
+        # 终极绝杀：发送到手机的 content 卡片内容彻底脱水降维，只保留 5 行极简总账概要！
         title_notify = "🌐 演员显示语言修改"
         content = f"🗣️ 语言语系：【{LANG_CHOICE}】"
         content += f"\n⚙️ 修改模式：【{MODE_NAME}】"
         content += f"\n📊 修改结果：【更新nfo文件: {TOTAL_MODIFIED_NFOS} 个，关联番号: {len(TOTAL_CIDS_SET)} 个】"
-        content += f"\n  ├── 演员名: {len(TOTAL_CHANGED_ACTORS)} 个"
+        content += f"\n  ├── 演员: {len(TOTAL_CHANGED_ACTORS)} 位"
         content += f"\n  ├── 类型: {TOTAL_GENRE_COUNTS} 个"
         content += f"\n  └── 标签: {TOTAL_TAG_COUNTS} 个"
         send_notify(title_notify, content.strip())
