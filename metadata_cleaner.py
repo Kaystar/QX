@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-# ql author: orphan_cleaner
-# ql name: 🧹 无视频元数据清理
-# ql cron: 0 0 4 * * *
+# ql author: metadata_cleaner
+# ql name: 🗑️ 无视频元数据清理
+# ql cron: 0 4 * * *
 # ql desc: 1:1硬核对齐strm视频，物理擦除失去主人的无主图片与NFO垃圾
 # ==================== 🛠️ 青龙环境变量配置指南 ====================
 # 1. MEDIA_DIR        : 媒体库挂载路径。  [默认值: /movies]
@@ -56,7 +56,7 @@ def main():
         if M_COUNTS.get("-poster.jpg", 0) > 0: content += f"\n  ├── 🖼️  海报图: {M_COUNTS['-poster.jpg']} 张"
         if M_COUNTS.get("-fanart.jpg", 0) > 0: content += f"\n  ├── 🎨 背景图: {M_COUNTS['-fanart.jpg']} 张"
         if M_COUNTS.get("-thumb.jpg", 0) > 0: content += f"\n  └── 📷 缩略图: {M_COUNTS['-thumb.jpg']} 张"
-        send_notify("🎬 无视频元数据清理", content.strip())
+        send_notify("🗑️ 无视频元数据清理", content.strip())
 
 if __name__ == "__main__":
     main()
