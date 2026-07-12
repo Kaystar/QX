@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # ql author: director_cleaner
 # ql name: 🎬 nfo导演标签清理
-# ql cron: 0 0 3 * * *
+# ql cron: 0 3 * * *
 # ql desc: 拉网式快速剔除全盘NFO中的director标签，保持完美行距不留白
 # ==================== 🛠️ 青龙环境变量配置指南 ====================
 # 1. MEDIA_DIR        : 媒体库挂载路径。  [默认值: /movies]
