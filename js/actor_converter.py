@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # ql author: actor_converter
 # ql name: 🌐 演员显示语言修改
-# ql cron:  0 2 * * *
+# ql cron: 0 2 * * *
 # ql desc: 自动遍历全盘NFO，根据五维立体交叉核对雷达将演员、Tag、Genre规范化为指定语系
 # ==================== 🛠️ 青龙环境变量配置指南 ====================
 # 1. MEDIA_DIR        : 媒体库挂载路径。  [默认值: /movies]
