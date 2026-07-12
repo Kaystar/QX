@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # ql author: actor_mapping_sync
-# ql name: 🎭 演员映射文件同步与合并
+# ql name: 🎭 演员映射表同步与合并
 # ql cron: 0 6 * * *
 # ql desc: 从GitHub获取演员映射XML，与本地自定义修改合并，生成最终映射文件并发送通知
 # ==================== 🛠️ 青龙环境变量配置指南 ====================
@@ -191,7 +191,7 @@ if __name__ == "__main__":
                     print(f"【成功】检测到内容发生实质性改变！新文件已保存至: {FULL_OUTPUT_PATH}")
                     
                     if current_final_md5:
-                        title = "🎭 演员映射文件更新成功"
+                        title = "🎭 演员映射表更新成功"
                         
                         # 🛠️ 智能看板：如果没有增删改，优雅提示暂无变更；有变动则清晰罗列
                         if added == 0 and updated == 0 and deleted == 0:
