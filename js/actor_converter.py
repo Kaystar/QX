@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-# ql author: actor_cleaner
-# ql name: 🎬 演员显示语言修改
-# ql cron: 0 0 2 * * *
+# ql author: actor_converter
+# ql name: 🌐 演员显示语言修改
+# ql cron: 0 2 * * *
 # ql desc: 引入四重内存O(1)快取哈希表，暴力终结全库高压挂起卡死，极速汉化更名
 # ==================== 🛠️ 青龙环境变量配置指南 ====================
 # 1. MEDIA_DIR        : 媒体库挂载路径.  [默认值: /movies]
@@ -293,7 +293,7 @@ def main():
         print("==================================================================\n")
 
         # 🌟 绝杀订正点：文案100%刚性更正为“演员: X 位”，灰色写实派组件完美刚性垂直像素平齐！
-        title_notify = "🎬 演员显示语言修改"
+        title_notify = "🌐 演员显示语言修改"
         content = f"🗣️ 语言语系：【{LANG_CHOICE}】"
         content += f"\n⚙️ 修改模式：【{MODE_NAME}】"
         content += f"\n📊 修改结果：【更新nfo文件: {TOTAL_MODIFIED_NFOS} 个，关联番号: {len(TOTAL_CIDS_SET)} 个】"
