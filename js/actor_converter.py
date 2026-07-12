@@ -106,7 +106,7 @@ def process_nfo_actor(nfo_path, xml_lines_pool, targets):
         # 核心映射容器：储存 NFO 旧名字到其对应的完整属性舱的映射关系
         matched_cabins_map = {}
 
-        # 终极去噪层：在最前端用 replace 暴力物理清洗、蒸发所有隐藏的 Unicode 零宽字符
+        # 零宽不连字幽灵清除层完好在位
         for raw_name in set(nfo_raw_names + cdata_names):
             name_clean = raw_name.replace('\u200c', '').replace('\u200b', '').replace('\u200d', '').replace('\ufeff', '').strip()
             if "<!" in name_clean or "]]>" in name_clean or not name_clean:
@@ -173,11 +173,17 @@ def process_nfo_actor(nfo_path, xml_lines_pool, targets):
         for nfo_name, cabin in matched_cabins_map.items():
             final_name = cabin["target_name"]
 
+            # 正向隔离硬锁：如果 NFO 名字本来就已经完全合规，直接大跨步熔断，不执行任何替换
+            if nfo_name == final_name:
+                continue
+
             # 收集此人名下在映射表中所有可能出现的旧别名
             old_aliases = set([cabin["jp"], cabin["zh_tw"], cabin["zh_cn"]] + cabin["keywords"])
+            if final_name in old_aliases:
+                old_aliases.remove(final_name)
 
             for old_val in old_aliases:
-                if not old_val or old_val == final_name:
+                if not old_val:
                     continue
 
                 # 正向擦除 NFO 内部普通的 tag 和 genre 标签
@@ -217,9 +223,15 @@ def process_nfo_actor(nfo_path, xml_lines_pool, targets):
                 up_bk = block
                 for nfo_name, cabin in matched_cabins_map.items():
                     final_name = cabin["target_name"]
+                    if nfo_name == final_name:
+                        continue
+
                     old_aliases = set([cabin["jp"], cabin["zh_tw"], cabin["zh_cn"]] + cabin["keywords"])
+                    if final_name in old_aliases:
+                        old_aliases.remove(final_name)
+
                     for old_val in old_aliases:
-                        if not old_val or old_val == final_name:
+                        if not old_val:
                             continue
                         up_bk = up_bk.replace(
                             f"<name>{old_val}</name>",
@@ -264,7 +276,7 @@ def process_nfo_actor(nfo_path, xml_lines_pool, targets):
 
 
 def send_notify(title, content):
-    """官方原生防爆网关：强行采用刚性动态挂载，100% 根除外部变量抛出的未定义 response 核弹"""
+    """发送通知"""
     for p in ['/ql/data/scripts', '/ql/scripts', '/ql/repo/scripts', '/ql/scripts/sendNotify']:
         if p not in sys.path:
             sys.path.append(p)
@@ -319,7 +331,7 @@ def main():
 
     # 控制台审计台账总结
     if TOTAL_MODIFIED_NFOS > 0 and TOTAL_CHANGED_ACTORS:
-        # 核心修正：大长串详细因果对照台账明细，100% 留守在青龙控制台（Log）里打印！绝对不发手机！
+        # 大长串更名因果对照台账明细，100% 留守在控制台（Log）里打印！绝对不发手机！
         print("\n==================================================================")
         print("📊 【本次运行核心施工审计总结报告】")
         print("==================================================================")
@@ -331,7 +343,7 @@ def main():
             print(f"   │    └── 🎬 关联番号: {', '.join(associated_cids)}")
         print("==================================================================\n")
 
-        # 终极绝杀：发送到手机的 content 卡片内容彻底脱水降维，只保留 5 行极简总账概要！
+        # 绝杀订正点：手机卡片通知文案 100% 刚性对齐为您要求的最新最高指令："演员: X 位"
         title_notify = "🌐 演员显示语言修改"
         content = f"🗣️ 语言语系：【{LANG_CHOICE}】"
         content += f"\n⚙️ 修改模式：【{MODE_NAME}】"
