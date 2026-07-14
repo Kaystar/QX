@@ -3,20 +3,20 @@
 
 """
 ================================================================================
-脚本名称: Emby NFO 标签/演员精准删除工具
+脚本名称: Emby NFO 标签/演员精准删除工具 (容错优化版)
 脚本用途: 
   主要用于自动化批量删除 Emby/Jellyfin 媒体库 NFO 文件中的特定演员、流派(genre)和标签(tag)。
   当你在删除名单中指定一个名称时，脚本会启动“严格模式”在 NFO 中检索，一旦命中，
   将同时从演员列表、流派列表、标签列表中将其彻底抹除。
 
 核心特性:
-  1. 联动严格删除：名称必须完全相同（严格相等）才触发删除，包含关系不予理会。
-     命中后，该名称对应的 actor、genre、tag 会被一并清理。
-  2. 完美排版不留痕：重构了 XML 缩进逻辑，删除节点后自动格式化，绝不留空行，
+  1. 智能空格容错：自动将全角空格、连续多空格统一化处理，防止因“空格类型不同”导致无法匹配。
+  2. 完美支持数字前缀：如“1橘 医師”，只要名单与 NFO 字符一致即可精准命中。
+  3. 完美排版不留痕：重构了 XML 缩进逻辑，删除节点后自动格式化，绝不留空行，
      也绝不造成多个标签挤在一行的情况。
-  3. 任务清单自动清理：物理删除成功后，会自动从本地 `delete.list` 清单中剔除已生效
+  4. 任务清单自动清理：物理删除成功后，会自动从本地 `delete.list` 清单中剔除已生效
      的规则，未触发的规则继续保留。
-  4. 智能通知合并：优先将统计报告与番号清单合并为一条 Telegram 通知发送，只有当字数
+  5. 智能通知合并：优先将统计报告与番号清单合并为一条 Telegram 通知发送，只有当字数
      超过电报限制（安全线 3500 字）时，才会自动切片分批投递。
 
 使用说明:
@@ -26,15 +26,12 @@
      - DELETE_LIST: 选填。若不想用文件，可直接在此环境变量中输入删除名单（一行一个）。
   2. 本地文件配置 (推荐)：
      - 在脚本同级目录下创建一个名为 `delete.list` 的文件。
-     - 写入你想要删除的演员/标签名称，每行一个。
-     - 示例：
-       某些无用标签
-       需要除名的演员
+     - 写入你想要删除的演员/标签名称（支持带数字前缀，如 `1橘 医師`），每行一个。
   3. 运行后：
      - 脚本会自动扫描 NFO 并进行原地物理擦除与排版优化。
 
 cron: 0 5 * * *
-new Env('NFO标签精准删除工具');
+new Env('Emby NFO 标签精准删除工具');
 ================================================================================
 """
 
@@ -57,8 +54,22 @@ stats = {
     "affected_fanhao": set()  # 记录关联的番号/文件名
 }
 
-# 记录哪些删除规则在此次运行中真正产生了修改
+# 记录哪些删除规则在此次运行中真正产生了修改（存储标准化后的名字）
 triggered_rules = set()
+# 映射表：标准化名字 -> 原始输入名字（用于回写并清理 delete.list）
+norm_to_raw_mapping = {}
+
+def normalize_name(name):
+    """
+    标准化名字函数：
+    1. 去除首尾空白
+    2. 将全角空格、制表符等所有空白字符统一替换为单张半角空格
+    """
+    if not name:
+        return ""
+    # 替换所有空白字符（含全角空格 \u3000）为半角空格
+    standardized = re.sub(r'[\s\u3000]+', ' ', name)
+    return standardized.strip()
 
 def parse_delete_list():
     """解析删除名单（优先读同级文件，次之读环境变量）"""
@@ -83,9 +94,12 @@ def parse_delete_list():
 
     lines = content.strip().split('\n')
     for line in lines:
-        item = line.strip()
-        if item and not item.startswith("#"): # 支持井号注释
-            delete_set.add(item)
+        raw_item = line.strip()
+        if raw_item and not raw_item.startswith("#"): # 支持井号注释
+            norm_item = normalize_name(raw_item)
+            if norm_item:
+                delete_set.add(norm_item)
+                norm_to_raw_mapping[norm_item] = raw_item # 记住原始写法以便后续精准删除
     return delete_set
 
 def clean_delete_list_file():
@@ -100,6 +114,9 @@ def clean_delete_list_file():
         print("[列表清理] 没有规则被触发删除，无需清理本地文件。")
         return
 
+    # 找出需要被删掉的原始行内容
+    raw_triggered_items = {norm_to_raw_mapping[norm] for norm in triggered_rules if norm in norm_to_raw_mapping}
+
     print(f"[列表清理] 正在清理已生效的删除规则...")
     try:
         with open(file_path, "r", encoding="utf-8") as f:
@@ -109,7 +126,7 @@ def clean_delete_list_file():
         removed_count = 0
         for line in lines:
             item = line.strip()
-            if item in triggered_rules:
+            if item in raw_triggered_items:
                 removed_count += 1
                 continue  # 跳过这一行，即删除
             new_lines.append(line)
@@ -137,9 +154,8 @@ def clean_xml_string(xml_str):
 
 def reset_and_indent(elem, level=0):
     """
-    规整排版核心核心函数：
+    规整排版核心函数：
     在删除节点后，完全清除原有的残留空白符，并基于当前树结构重新计算标准缩进。
-    这能彻底根治“遗留空行”和“多标签挤在一行”的历史顽疾。
     """
     i = "\n" + level * "  "
     if len(elem):
@@ -176,11 +192,10 @@ def process_nfo(file_path, delete_set):
     local_tag_dels = 0
 
     # 1. 严格审查并删除演员节点
-    # 因为要在遍历时做删除，所以采用倒序或列表切片方式安全移除
     for actor in root.findall('actor')[:]:
         name_node = actor.find('name')
         if name_node is not None and name_node.text:
-            target_name = name_node.text.strip()
+            target_name = normalize_name(name_node.text)
             if target_name in delete_set:
                 root.remove(actor)
                 local_actor_dels += 1
@@ -191,7 +206,7 @@ def process_nfo(file_path, delete_set):
     # 2. 严格审查并删除 genre 节点
     for genre in root.findall('genre')[:]:
         if genre.text:
-            target_genre = genre.text.strip()
+            target_genre = normalize_name(genre.text)
             if target_genre in delete_set:
                 root.remove(genre)
                 local_genre_dels += 1
@@ -202,7 +217,7 @@ def process_nfo(file_path, delete_set):
     # 3. 严格审查并删除 tag 节点
     for tag in root.findall('tag')[:]:
         if tag.text:
-            target_tag = tag.text.strip()
+            target_tag = normalize_name(tag.text)
             if target_tag in delete_set:
                 root.remove(tag)
                 local_tag_dels += 1
