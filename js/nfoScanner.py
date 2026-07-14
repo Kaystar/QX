@@ -3,7 +3,7 @@
 
 """
 cron: 0 3 * * *
-new Env('nfo演员名特殊字符检查');
+new Env('NFO演员名特殊字符检查');
 """
 
 import os
