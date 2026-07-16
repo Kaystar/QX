@@ -2,7 +2,7 @@
 # ql author: actor_mapping_sync
 # ql name: 🎭 演员映射表同步与合并
 # ql cron: 0 6 * * *
-# ql desc: 从GitHub获取演员映射XML，与本地自定义修改合并，生成最终映射文件并发送通知
+# ql desc: 从GitHub获取演员映射XML，与本地自定义修改(支持分流覆盖与删除)合并，生成最终映射文件并发送通知
 # ==================== 🛠️ 青龙环境变量配置指南 ====================
 # 1. ACTOR_REPO_URL    : GitHub远程演员映射XML文件的URL。  [默认值: https://githubusercontent.com]
 # 2. ACTOR_LOCAL_FILE  : 本地存储的GitHub下载文件名称。    [默认值: github-downloaded.xml]
@@ -36,18 +36,15 @@ def split_message(text, max_length=3500):
     current_length = 0
     
     for line in text.split('\n'):
-        # 如果单行本身就超过了最大限制（极少见），强制按字符切分
         if len(line) > max_length:
             if current_chunk:
                 chunks.append('\n'.join(current_chunk))
                 current_chunk = []
                 current_length = 0
-            # 强行切分这一长行
             for i in range(0, len(line), max_length):
                 chunks.append(line[i:i+max_length])
             continue
             
-        # 加上换行符后的预计长度
         line_len = len(line) + 1
         if current_length + line_len > max_length:
             chunks.append('\n'.join(current_chunk))
@@ -63,20 +60,17 @@ def split_message(text, max_length=3500):
     return chunks
 
 def send_via_ql_sendnotify(title, content):
-    """调用青龙原生的 sendNotify.py 模块发送 Telegram 通知（支持超长内容自动分包发送）"""
+    """调用青龙原生的 sendNotify.py 模块发送 Telegram 通知"""
     ql_paths = ['/ql/data/scripts', '/ql/scripts', './']
     for p in ql_paths:
         if p not in sys.path:
             sys.path.append(p)
     try:
         import sendNotify
-        
-        # 使用安全长度拆分通知内容
         message_chunks = split_message(content, max_length=3500)
         total_pages = len(message_chunks)
         
         for idx, chunk in enumerate(message_chunks):
-            # 如果分包了，在标题上优雅地加上页码，如 "🎭 演员映射表更新成功 (1/3)"
             page_title = f"{title} ({idx + 1}/{total_pages})" if total_pages > 1 else title
             sendNotify.send(page_title, chunk)
             print(f"【通知】⚡ 成功投递分包通知 [{idx + 1}/{total_pages}]")
@@ -152,68 +146,131 @@ def print_detailed_diff(old_file, new_file):
     return added, updated, deleted
 
 def merge_actor_xml_penta_lock_verbose(repo_file, my_file, output_path):
-    """带明细日志记录的五重指纹层级覆盖熔断合并算法"""
-    if not os.path.exists(repo_file) or not os.path.exists(my_file): return False, 0, []
+    """带明细日志记录的【结构分离版】覆盖与整行物理删除合并算法"""
+    if not os.path.exists(repo_file) or not os.path.exists(my_file): return False, {}
     try:
         dir_name = os.path.dirname(output_path)
         if dir_name and not os.path.exists(dir_name): os.makedirs(dir_name, exist_ok=True)
+        
         repo_tree = ET.parse(repo_file)
         repo_actor_node = repo_tree.getroot().find('actor')
-        my_actor_node = ET.parse(my_file).getroot().find('actor')
-        if repo_actor_node is None or my_actor_node is None: return False, 0, []
+        if repo_actor_node is None: return False, {}
+        repo_children = list(repo_actor_node)
 
-        repo_children, change_count, overwritten_logs = list(repo_actor_node), 0, []
-        notification_overwritten_details = [] # 用于通知的结构化本地覆写日志
+        my_root = ET.parse(my_file).getroot()
+        my_update_node = my_root.find('update')
+        my_delete_node = my_root.find('delete')
 
-        for my_child in my_actor_node:
-            my_jp, my_kw = my_child.get('jp'), my_child.get('keyword')
-            my_zh, my_tw = my_child.get('zh_cn'), my_child.get('zh_tw')
-            my_bio_prefix = get_bio_prefix(my_child.get('bio_graphy'))
-            if not any([my_jp, my_kw, my_zh, my_tw, my_bio_prefix]): continue
-            change_count += 1
-            matched_node, strategy = None, "未知"
-
-            if my_jp:
-                for node in repo_children:
-                    if node.get('jp') == my_jp: matched_node, strategy = node, "日本名完全契合"; break
-            if not matched_node and my_kw:
-                for node in repo_children:
-                    if node.get('keyword') == my_kw: matched_node, strategy = node, "旧关键字雷同"; break
-            if not matched_node and my_zh:
-                for node in repo_children:
-                    if node.get('zh_cn') == my_zh: matched_node, strategy = node, "简体中文完全契合"; break
-            if not matched_node and my_tw:
-                for node in repo_children:
-                    if node.get('zh_tw') == my_tw: matched_node, strategy = node, "繁简双向互解"; break
-            if not matched_node and my_bio_prefix:
-                for node in repo_children:
-                    if get_bio_prefix(node.get('bio_graphy')) == my_bio_prefix: matched_node, strategy = node, "简介指纹物理召回"; break
-
-            if matched_node is not None:
-                actor_name = matched_node.get('zh_cn') or matched_node.get('jp') or "未知"
-                modded_fields = [f"{k}: '{matched_node.get(k)}' ➔ '{v}'" for k, v in my_child.attrib.items() if matched_node.get(k) != v]
+        overwritten_logs = []
+        
+        # 🔔 分类存储本地变更细节，用于结构化通知
+        local_overwrites = []  # 属性覆盖修改
+        local_additions = []   # 本地追加新增
+        local_deletions = []   # 本地物理删除
+        
+        # ==================== 1. 执行物理删除逻辑 ====================
+        if my_delete_node is not None:
+            for my_child in my_delete_node:
+                my_jp, my_kw = my_child.get('jp'), my_child.get('keyword')
+                my_zh, my_tw = my_child.get('zh_cn'), my_child.get('zh_tw')
+                my_bio_prefix = get_bio_prefix(my_child.get('bio_graphy'))
                 
-                overwritten_logs.append(f"  ⚡ 拦截成功 ➔ {actor_name} [{strategy}] | 强写 ➔ {', '.join(modded_fields)}")
-                if modded_fields:
-                    notification_overwritten_details.append((actor_name, modded_fields))
-                
-                matched_node.attrib.clear()
-                for attr_name, attr_value in my_child.attrib.items(): matched_node.set(attr_name, attr_value)
-            else:
-                actor_name = my_zh or my_jp or "未知"
-                overwritten_logs.append(f"  ➕ 原创新增 ➔ {actor_name} [全库查无此人，安全追加至末尾]")
-                notification_overwritten_details.append((actor_name, ["追加至末尾 (原创新增)"]))
-                repo_actor_node.append(my_child)
+                if not any([my_jp, my_kw, my_zh, my_tw, my_bio_prefix]): continue
+                matched_node, strategy = None, "未知"
 
+                # 五重指纹定位
+                if my_jp:
+                    for node in repo_children:
+                        if node.get('jp') == my_jp: matched_node, strategy = node, "日本名完全契合"; break
+                if not matched_node and my_kw:
+                    for node in repo_children:
+                        if node.get('keyword') == my_kw: matched_node, strategy = node, "旧关键字雷同"; break
+                if not matched_node and my_zh:
+                    for node in repo_children:
+                        if node.get('zh_cn') == my_zh: matched_node, strategy = node, "简体中文完全契合"; break
+                if not matched_node and my_tw:
+                    for node in repo_children:
+                        if node.get('zh_tw') == my_tw: matched_node, strategy = node, "繁简双向互解"; break
+                if not matched_node and my_bio_prefix:
+                    for node in repo_children:
+                        if get_bio_prefix(node.get('bio_graphy')) == my_bio_prefix: matched_node, strategy = node, "简介指纹物理召回"; break
+
+                if matched_node is not None:
+                    actor_name = matched_node.get('zh_cn') or matched_node.get('jp') or "未知"
+                    
+                    # 🔴 彻底从父节点与临时缓存中物理移除
+                    repo_actor_node.remove(matched_node)
+                    repo_children.remove(matched_node)
+                    
+                    overwritten_logs.append(f"  ❌ 物理删除 ➔ {actor_name} [{strategy}]")
+                    local_deletions.append(actor_name)
+                else:
+                    actor_name = my_zh or my_jp or "未知"
+                    overwritten_logs.append(f"  ⚠️ 忽略删除 ➔ {actor_name} [全库未查到该演员，无需执行删除]")
+
+        # ==================== 2. 执行更新与覆盖逻辑 ====================
+        if my_update_node is not None:
+            for my_child in my_update_node:
+                my_jp, my_kw = my_child.get('jp'), my_child.get('keyword')
+                my_zh, my_tw = my_child.get('zh_cn'), my_child.get('zh_tw')
+                my_bio_prefix = get_bio_prefix(my_child.get('bio_graphy'))
+                
+                if not any([my_jp, my_kw, my_zh, my_tw, my_bio_prefix]): continue
+                matched_node, strategy = None, "未知"
+
+                # 五重指纹定位
+                if my_jp:
+                    for node in repo_children:
+                        if node.get('jp') == my_jp: matched_node, strategy = node, "日本名完全契合"; break
+                if not matched_node and my_kw:
+                    for node in repo_children:
+                        if node.get('keyword') == my_kw: matched_node, strategy = node, "旧关键字雷同"; break
+                if not matched_node and my_zh:
+                    for node in repo_children:
+                        if node.get('zh_cn') == my_zh: matched_node, strategy = node, "简体中文完全契合"; break
+                if not matched_node and my_tw:
+                    for node in repo_children:
+                        if node.get('zh_tw') == my_tw: matched_node, strategy = node, "繁简双向互解"; break
+                if not matched_node and my_bio_prefix:
+                    for node in repo_children:
+                        if get_bio_prefix(node.get('bio_graphy')) == my_bio_prefix: matched_node, strategy = node, "简介指纹物理召回"; break
+
+                if matched_node is not None:
+                    actor_name = matched_node.get('zh_cn') or matched_node.get('jp') or "未知"
+                    modded_fields = [f"{k}: '{matched_node.get(k)}' ➔ '{v}'" for k, v in my_child.attrib.items() if matched_node.get(k) != v]
+                    
+                    overwritten_logs.append(f"  ⚡ 覆盖拦截 ➔ {actor_name} [{strategy}] | 强写 ➔ {', '.join(modded_fields)}")
+                    if modded_fields:
+                        local_overwrites.append((actor_name, modded_fields))
+                    
+                    matched_node.attrib.clear()
+                    for attr_name, attr_value in my_child.attrib.items(): 
+                        matched_node.set(attr_name, attr_value)
+                else:
+                    actor_name = my_zh or my_jp or "未知"
+                    overwritten_logs.append(f"  ➕ 原创新增 ➔ {actor_name} [全库查无此人，安全追加至末尾]")
+                    local_additions.append(actor_name)
+                    repo_actor_node.append(my_child)
+
+        # ==================== 3. 输出合并控制台日志 ====================
+        total_rules = len(local_overwrites) + len(local_additions) + len(local_deletions)
         print("🛠️ ==================================================")
-        print(f"🔧           🧩 本地 MY-CHANGES 自定义覆盖日志 ({change_count}条) ")
+        print(f"🔧       🧩 本地 MY-CHANGES 自定义覆盖与删除日志 (共处理 {total_rules} 条有效规则)")
         print("====================================================")
         for log in overwritten_logs: print(log)
         print("====================================================\n")
+        
         repo_tree.write(output_path, encoding='utf-8', xml_declaration=True)
-        return True, change_count, notification_overwritten_details
+        
+        # 结构化返回各种变更细节
+        change_summary = {
+            'overwrites': local_overwrites,
+            'additions': local_additions,
+            'deletions': local_deletions
+        }
+        return True, change_summary
     except Exception as e:
-        print(f"【错误】XML 合并失败: {e}"); return False, 0, []
+        print(f"【错误】XML 结构分离合并失败: {e}"); return False, {}
 
 if __name__ == "__main__":
     FULL_OUTPUT_PATH = os.path.join(OUTPUT_DIR, FINAL_OUTPUT_FILE) if OUTPUT_DIR else FINAL_OUTPUT_FILE
@@ -228,15 +285,15 @@ if __name__ == "__main__":
             temp_repo_path = LOCAL_REPO_FILE + ".tmp_repo"
             with open(temp_repo_path, 'wb') as f: f.write(response.content)
             
-            # 1. 获取变动名单与修改细则
+            # 1. 获取远程变动名单与修改细则
             added_list, updated_list, deleted_list = print_detailed_diff(LOCAL_REPO_FILE, temp_repo_path)
             added, updated, deleted = len(added_list), len(updated_list), len(deleted_list)
             
             os.replace(temp_repo_path, LOCAL_REPO_FILE)
             
             temp_final_path = FULL_OUTPUT_PATH + ".tmp_final"
-            # 2. 调用合并算法并获取本地自定义覆盖明细
-            merge_success, my_count, local_overwrites = merge_actor_xml_penta_lock_verbose(LOCAL_REPO_FILE, MY_CHANGES_FILE, temp_final_path)
+            # 2. 调用合并算法并捕获分类变更字典
+            merge_success, local_changes = merge_actor_xml_penta_lock_verbose(LOCAL_REPO_FILE, MY_CHANGES_FILE, temp_final_path)
             
             if merge_success:
                 new_final_md5 = get_file_md5(temp_final_path)
@@ -252,21 +309,27 @@ if __name__ == "__main__":
                         title = "🎭 演员映射表更新成功"
                         total_actors = len(parse_xml_to_list(FULL_OUTPUT_PATH))
                         
-                        # 3. 如果没有任何变动
-                        if added == 0 and updated == 0 and deleted == 0 and not local_overwrites:
+                        # 提取本地变更细节
+                        local_ow = local_changes.get('overwrites', [])
+                        local_add = local_changes.get('additions', [])
+                        local_del = local_changes.get('deletions', [])
+                        
+                        has_local_changes = local_ow or local_add or local_del
+                        
+                        # 3. 没有任何变动的情况
+                        if added == 0 and updated == 0 and deleted == 0 and not has_local_changes:
                             diff_text = "暂无变更"
                             details_text = ""
                         else:
                             diff_text = f"新增 {added} / 修改 {updated} / 移除 {deleted}"
                             detail_lines = []
                             
-                            # 📌 4. 远程新增名单
+                            # 📌 4. 远程变动展示
                             if added_list:
                                 detail_lines.append("\n ➕ 【远程新增】")
                                 detail_lines.extend([f"   • {name}" for name in added_list[:15]])
                                 if added > 15: detail_lines.append(f"   • ...等共 {added} 人")
                             
-                            # 📌 5. 远程修改名单
                             if updated_list:
                                 detail_lines.append("\n ⚙️ 【远程修改】")
                                 for name, diffs in updated_list[:15]:
@@ -274,33 +337,49 @@ if __name__ == "__main__":
                                     detail_lines.append(f"   • {name} ➔ ({diff_str})")
                                 if updated > 15: detail_lines.append(f"   • ...等共 {updated} 人")
                                 
-                            # 📌 6. 远程移除名单
                             if deleted_list:
                                 detail_lines.append("\n ❌ 【远程移除】")
                                 detail_lines.extend([f"   • {name}" for name in deleted_list[:15]])
                                 if deleted > 15: detail_lines.append(f"   • ...等共 {deleted} 人")
                                 
-                            # 📌 7. 本地覆写规则细节展示
-                            if local_overwrites:
-                                detail_lines.append("\n 🧩 【本地覆写】")  # 🛠️ 在此处已完成文字修改
-                                for name, diffs in local_overwrites[:15]:
+                            # 📌 5. 本地覆盖/新增展示
+                            if local_ow or local_add:
+                                detail_lines.append("\n 🧩 【本地覆写】")
+                                # 先展示修改
+                                for name, diffs in local_ow[:15]:
                                     diff_str = ", ".join(diffs)
-                                    detail_lines.append(f"   • {name} ➔ {diff_str}")
-                                if len(local_overwrites) > 15: 
-                                    detail_lines.append(f"   • ...等共 {len(local_overwrites)} 人")
+                                    detail_lines.append(f"   • {name} ➔ ({diff_str})")
+                                # 后展示新增
+                                remaining_slots = 15 - len(local_ow)
+                                if remaining_slots > 0 and local_add:
+                                    for name in local_add[:remaining_slots]:
+                                        detail_lines.append(f"   • {name} ➔ (原创新增，安全追加)")
+                                
+                                total_ow_add = len(local_ow) + len(local_add)
+                                if total_ow_add > 15:
+                                    detail_lines.append(f"   • ...等共 {total_ow_add} 人")
+                                    
+                            # 📌 6. 本地物理删除展示 (完美隔离！)
+                            if local_del:
+                                detail_lines.append("\n ❌ 【本地删除】")
+                                detail_lines.extend([f"   • {name} ➔ (已物理抹除)" for name in local_del[:15]])
+                                if len(local_del) > 15:
+                                    detail_lines.append(f"   • ...等共 {len(local_del)} 人")
                             
                             details_text = "\n" + "\n".join(detail_lines)
                         
-                        # ==================== ✨ 无符号至臻排版修正 ====================
+                        # ⚙️ 本地覆写状态行进行精准数量分流统计
+                        local_status_str = f"{len(local_ow)} 位更新 / {len(local_add)} 位新增 / {len(local_del)} 位删除"
+                        
+                        # 无符号至臻排版修正
                         content = (
                             f"📊 远程变动: {diff_text}\n"
-                            f"👥 演员总数: {total_actors} 位演员\n"  # 🛠️ 在此处已完成文字修改
-                            f"⚙️ 本地覆写:  {my_count} 位演员\n"
+                            f"👥 演员总数: {total_actors} 位演员\n"
+                            f"⚙️ 本地覆写: {local_status_str}\n"
                             f"📁 存储路径: {FULL_OUTPUT_PATH}\n"
                             f"⏰ 同步时间: {current_time}"
                             f"{details_text}"
                         )
-                        # ==============================================================
                         send_via_ql_sendnotify(title, content)
                     else:
                         print("【日志】由于本地原本无最终成品文件，本次为首次系统初始化运行，根据冷启动规则不发送 Telegram 通知。")
