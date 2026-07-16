@@ -20,9 +20,9 @@ new Env('🔢视频版本检测');
 - MEDIA_DIR: 必须配置。需要扫描的飞牛本地媒体目录绝对路径，多个目录用英文逗号(,)分隔。
              例如：/vol1/media/Movie 或 /vol1/media/Movie1,/vol1/media/Movie2
 
-青龙通知：
-- 脚本会自动多路径寻找并使用青龙的 `sendNotify.py` 模块。
-- 考虑到 Telegram 的消息长度限制（约 4096 字符），通知内容如果过长，脚本会自动拆分成多条依次发送。
+青龙通知与结果：
+- 消息轰炸优化：Telegram 通知中【仅发送总结数据】，不再发送详细列表。
+- 详细结果查看：具体的重复番号列表将自动写入脚本同级目录下的 `🔢视频版本检测结果.txt` 文件中。
 =========================================
 """
 
@@ -34,19 +34,15 @@ import sys
 # 移植自高效 NFO 脚本的通知网络网关加载逻辑
 # ==========================================
 def send_notify(title, content):
-    # 遍历青龙所有可能的通知路径并加入到运行环境中
     for p in ['/ql/data/scripts', '/ql/scripts', '/ql/repo/scripts', os.path.dirname(__file__)]:
         if os.path.exists(os.path.join(p, 'sendNotify.py')) and p not in sys.path: 
             sys.path.append(p)
     try:
-        # 第一重尝试：调用标准的 send 函数
         from sendNotify import send; send(title, content)
     except Exception as e:
         try:
-            # 第二重尝试：调用部分青龙版本的 sendNotify 函数
             from sendNotify import sendNotify; sendNotify(title, content)
         except Exception: 
-            # 如果都失败了，直接退化为控制台打印
             print(f"🎉 提示：未检测到青龙内置通知模块或发送失败: {e}")
             print(f"\n【控制台备份显示 - {title}】\n{content}")
 
@@ -114,28 +110,29 @@ def scan_and_find_duplicates(media_dirs):
     return duplicates
 
 
-def send_tg_notification(summary, detail_list):
-    """根据 Telegram 长度规则分包组合通知并发送"""
-    MAX_CHAR = 3000
-    current_message = f"🔔 *🔢视频版本检测报告*\n\n{summary}\n\n"
-    current_message += "⚠️ *重复详情列表：*\n"
+def write_details_to_file(duplicates):
+    """将重复详情写入脚本目录下的文本文件中"""
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    result_file_path = os.path.join(current_dir, "🔢视频版本检测结果.txt")
     
-    messages_to_send = []
-    
-    for detail in detail_list:
-        if len(current_message) + len(detail) > MAX_CHAR:
-            messages_to_send.append(current_message)
-            current_message = "🔄 *🔢视频版本检测报告（续）：*\n\n"
-        
-        current_message += detail + "\n"
-    
-    if current_message:
-        messages_to_send.append(current_message)
-        
-    for idx, msg in enumerate(messages_to_send):
-        title = f"🔢视频版本检测 ({idx + 1}/{len(messages_to_send)})"
-        log(f"✉️ 正在发送第 {idx + 1} 部分通知...")
-        send_notify(title, msg)
+    try:
+        with open(result_file_path, "w", encoding="utf-8") as f:
+            f.write("==================================================\n")
+            f.write("               🔢 视频版本检测详细报告\n")
+            f.write("==================================================\n")
+            f.write(f"生成时间: {os.popen('date').read().strip()}\n\n")
+            
+            for idx, (base_id, files) in enumerate(duplicates.items(), 1):
+                f.write(f"{idx}. 番号: {base_id}\n")
+                f.write(f"   🔹 原版: {files['original']}\n")
+                f.write(f"   🔸 冲突版本:\n")
+                for other in files['others']:
+                    f.write(f"      - {other}\n")
+                f.write("-" * 40 + "\n")
+                
+        log(f"💾 详细重复列表已成功写入文件: {result_file_path}")
+    except Exception as e:
+        log(f"❌ 写入结果文件失败: {e}")
 
 
 def main():
@@ -161,20 +158,22 @@ def main():
     total_count = len(duplicates)
     detail_count = sum(len(v['others']) + 1 for v in duplicates.values())
     
-    summary_msg = f"📊 *检测结果总结：*\n- 共发现 **{total_count}** 组存在冲突的番号\n- 涉及重复 strm 文件共 **{detail_count}** 个。"
-    log(f"发现 {total_count} 组重复，准备输出详情...")
+    # 1. 整理控制台日志并保存到本地文件
+    log(f"发现 {total_count} 组重复，开始写入本地文件...")
+    write_details_to_file(duplicates)
     
-    detail_list = []
-    for idx, (base_id, files) in enumerate(duplicates.items(), 1):
-        detail = f"{idx}. 📇 番号: `{base_id}`\n"
-        detail += f"   🔹 原版: `{files['original']}`\n"
-        detail += f"   🔸 冲突版本:\n"
-        for other in files['others']:
-            detail += f"      - `{other}`\n"
-        detail_list.append(detail)
-        print(f"[{base_id}] 重复: 原版[{files['original']}] <-> 冲突{files['others']}")
-
-    send_tg_notification(summary_msg, detail_list)
+    # 2. 组装精简版 Telegram 通知内容（不包含具体列表）
+    summary_msg = (
+        f"📊 *检测结果总结：*\n"
+        f"- 共发现 **{total_count}** 组存在冲突的番号\n"
+        f"- 涉及重复 strm 文件共 **{detail_count}** 个。\n\n"
+        f"📝 *温馨提示：*\n"
+        f"详细的重复名单已写入脚本目录下的 `🔢视频版本检测结果.txt` 文件中，请前往青龙面板“脚本管理”或前往对应文件夹查看。"
+    )
+    
+    # 3. 发送单条总结通知
+    log("✉️ 正在发送总结通知...")
+    send_notify("🔢视频版本检测报告", summary_msg)
     log("🏁 任务运行结束。")
 
 
