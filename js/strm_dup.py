@@ -75,14 +75,16 @@ def extract_base_and_suffix(filename):
         return name_without_ext, ""
 
 
-def format_version_name(filename, suffix):
-    """根据后缀美化版本显示名称"""
+def format_version_name(suffix):
+    """仅保留简称：-C 转换为 中字，-4K 转换为 4K，其他后缀剥离连接符后直接显示"""
     clean_suffix = suffix.strip().upper()
     if clean_suffix in ["-C", "_C", " C"]:
-        return "中字版"
+        return "中字"
     elif clean_suffix in ["-4K", "_4K", " 4K"]:
-        return "4K版"
-    return f"版本({suffix})"
+        return "4K"
+    
+    # 如果是其他自定义后缀，把前面的横杠、下划线或空格去掉，保持干净输出
+    return re.sub(r'^[-_\s]+', '', suffix).strip()
 
 
 def scan_and_find_duplicates(media_dirs, detect_versions):
@@ -155,9 +157,9 @@ def write_details_to_file(duplicates):
                 f.write(f"{idx}. 番号: {base_id}\n")
                 f.write(f"   🔹 原档: {files['original']}\n")
                 f.write(f"   🔸 冲突版本:\n")
-                for other_file, suffix in files['others']:
-                    ver_name = format_version_name(other_file, suffix)
-                    f.write(f"      - {other_file} ({ver_name})\n")
+                for _, suffix in files['others']:
+                    ver_name = format_version_name(suffix)
+                    f.write(f"      - {ver_name}\n")
                 f.write("-" * 40 + "\n")
                 
         log(f"💾 详细重复列表已成功写入文件: {result_file_path}")
