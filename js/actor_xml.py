@@ -237,11 +237,35 @@ def merge_actor_xml_penta_lock_verbose(repo_file, my_file, output_path):
 
                 if matched_node is not None:
                     actor_name = matched_node.get('zh_cn') or matched_node.get('jp') or "未知"
-                    modded_fields = [f"{k}: '{matched_node.get(k)}' ➔ '{v}'" for k, v in my_child.attrib.items() if matched_node.get(k) != v]
                     
-                    overwritten_logs.append(f"  ⚡ 覆盖拦截 ➔ {actor_name} [{strategy}] | 强写 ➔ {', '.join(modded_fields)}")
-                    if modded_fields:
-                        local_overwrites.append((actor_name, modded_fields))
+                    # 🔍 【重点过滤与精简包装】
+                    # 分析修改了哪些字段
+                    core_fields = ['zh_cn', 'zh_tw', 'jp']
+                    changed_core_details = []
+                    changed_other_keys = []
+                    
+                    for k, v in my_child.attrib.items():
+                        old_v = matched_node.get(k)
+                        if old_v != v:
+                            if k in core_fields:
+                                changed_core_details.append(f"{k}: '{old_v}' ➔ '{v}'")
+                            else:
+                                changed_other_keys.append(k)
+                                
+                    # 组装格式化展示逻辑
+                    final_notice_parts = []
+                    if changed_core_details:
+                        final_notice_parts.extend(changed_core_details)
+                    if changed_other_keys:
+                        final_notice_parts.append(f"其他修改: {', '.join(changed_other_keys)}")
+                    
+                    # 控制台仍然记录完整变动
+                    all_fields = [f"{k}: '{matched_node.get(k)}' ➔ '{v}'" for k, v in my_child.attrib.items() if matched_node.get(k) != v]
+                    overwritten_logs.append(f"  ⚡ 覆盖拦截 ➔ {actor_name} [{strategy}] | 强写 ➔ {', '.join(all_fields)}")
+                    
+                    # 只有在确有属性变更时，才推入通知队列
+                    if final_notice_parts:
+                        local_overwrites.append((actor_name, final_notice_parts))
                     
                     matched_node.attrib.clear()
                     for attr_name, attr_value in my_child.attrib.items(): 
@@ -262,7 +286,6 @@ def merge_actor_xml_penta_lock_verbose(repo_file, my_file, output_path):
         
         repo_tree.write(output_path, encoding='utf-8', xml_declaration=True)
         
-        # 结构化返回各种变更细节
         change_summary = {
             'overwrites': local_overwrites,
             'additions': local_additions,
@@ -345,7 +368,7 @@ if __name__ == "__main__":
                             # 📌 5. 本地覆盖/新增展示
                             if local_ow or local_add:
                                 detail_lines.append("\n 🧩 【本地覆写】")
-                                # 先展示修改
+                                # 展示修改 (此时已根据您的要求精准包装)
                                 for name, diffs in local_ow[:15]:
                                     diff_str = ", ".join(diffs)
                                     detail_lines.append(f"   • {name} ➔ ({diff_str})")
@@ -359,7 +382,7 @@ if __name__ == "__main__":
                                 if total_ow_add > 15:
                                     detail_lines.append(f"   • ...等共 {total_ow_add} 人")
                                     
-                            # 📌 6. 本地物理删除展示 (完美隔离！)
+                            # 📌 6. 本地物理删除展示
                             if local_del:
                                 detail_lines.append("\n ❌ 【本地删除】")
                                 detail_lines.extend([f"   • {name} ➔ (已物理抹除)" for name in local_del[:15]])
@@ -382,6 +405,6 @@ if __name__ == "__main__":
                         )
                         send_via_ql_sendnotify(title, content)
                     else:
-                        print("【日志】由于本地原本无最终成品文件，本次为首次系统初始化运行，根据冷启动规则不发送 Telegram 通知。")
+                        print("【日志】由于本地原本无最终成品文件，本次为首次 system 初始化运行，根据冷启动规则不发送 Telegram 通知。")
         else: print(f"【警告】请求 GitHub 失败，状态码: {response.status_code}")
     except Exception as e: print(f"【错误】网络连接失败: {e}")
