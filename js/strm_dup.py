@@ -91,10 +91,10 @@ def get_version_info(suffix):
 
 
 def scan_and_find_duplicates(media_dirs, detect_versions):
-    """扫描目录，找出重复版本"""
+    """扫描目录并输出详细日志"""
     db = {}
     
-    # 解析过滤后缀列表，全部转换为大写进行不区分大小写匹配
+    # 解析过滤后缀列表
     filter_enabled = False
     allowed_suffixes = []
     if detect_versions and detect_versions.strip().upper() != "ALL":
@@ -126,20 +126,26 @@ def scan_and_find_duplicates(media_dirs, detect_versions):
                     if not suffix:
                         # 找到了无后缀的原档
                         db[base_id]['base_file'] = file
+                        log(f" 🟩 发现原档: {file} -> 解析基础番号: {base_id}")
                     else:
                         # 过滤逻辑：如果启用了过滤，且当前后缀不在允许列表中，直接忽略
                         if filter_enabled and suffix.strip().upper() not in allowed_suffixes:
+                            log(f" ⬜ 忽略后缀版本(不在检测列表中): {file} -> 基础番号: {base_id}, 后缀: {suffix}")
                             continue
+                        
                         db[base_id]['sub_versions'].append((file, suffix))
+                        log(f" 🟨 记录匹配后缀版本: {file} -> 基础番号: {base_id}, 后缀: {suffix}")
 
     duplicates = {}
+    log("📝 正在进行最终的重复匹配计算...")
     for base_id, info in db.items():
         # 判定条件：原档存在，且至少存在一个被允许参与检测的后缀版本
         if info['base_file'] and info['sub_versions']:
             duplicates[base_id] = {
                 'original': info['base_file'],
-                'others': info['sub_versions']  # 存放的是 (filename, suffix) 元组列表
+                'others': info['sub_versions']
             }
+            log(f" 🚨 发现重复组! 番号: {base_id} -> 原档 [{info['base_file']}] 共存后缀版本 {[v[0] for v in info['sub_versions']]}")
             
     return duplicates
 
@@ -149,7 +155,7 @@ def write_details_to_file(duplicates):
     current_dir = os.path.dirname(os.path.abspath(__file__))
     result_file_path = os.path.join(current_dir, "🔢视频版本检测结果.txt")
     
-    # 使用 sorted 进行字典序升序排列，key=lambda x: x[0].lower() 确保排序时不区分大小写
+    # 使用 sorted 进行字典序升序排列
     sorted_duplicates = sorted(duplicates.items(), key=lambda x: x[0].lower())
     
     try:
@@ -161,10 +167,9 @@ def write_details_to_file(duplicates):
             
             for idx, (base_id, files) in enumerate(sorted_duplicates, 1):
                 f.write(f"{idx}. 番号: {base_id}\n")
-                # 原档采用蓝色圆形 🔵
                 f.write(f"   🔵 原档: {files['original']}\n")
                 
-                # 遍历并输出具体的冲突后缀，平级展示，全部采用尺寸完美统一的圆形系列
+                # 遍历并输出具体的冲突后缀
                 for other_file, suffix in files['others']:
                     emoji, tag_name = get_version_info(suffix)
                     f.write(f"   {emoji} {tag_name}: {other_file}\n")
@@ -184,7 +189,7 @@ def main():
         send_notify("🔢视频版本检测失败", "未配置环境变量 `MEDIA_DIR`，脚本已中止。")
         sys.exit(1)
         
-    # 获取需要检测的版本后缀配置，默认值为 ALL
+    # 获取需要检测的版本后缀配置
     detect_versions = os.environ.get("DETECT_VERSIONS", "ALL")
     
     media_dirs = media_dir_env.split(',')
