@@ -31,22 +31,31 @@ import re
 import sys
 
 # ==========================================
-# 自动定位并导入青龙通知模块
+# 精准锁定并导入青龙 scripts 目录下的通知模块
 # ==========================================
 HAS_NOTIFY = False
-# 遍历青龙可能存在的所有脚本根目录及当前运行目录
-for ql_path in ['/ql/data/scripts', '/ql/scripts', os.path.dirname(__file__), '..']:
+
+possible_paths = [
+    '/ql/data/scripts', 
+    '/ql/scripts',
+    os.path.abspath(os.path.join(os.path.dirname(__file__), '../../scripts')),
+    os.path.abspath(os.path.join(os.path.dirname(__file__), '../')),
+    os.path.dirname(__file__)
+]
+
+for ql_path in possible_paths:
     if os.path.exists(os.path.join(ql_path, 'sendNotify.py')):
         sys.path.append(ql_path)
         try:
             from sendNotify import send_notification
             HAS_NOTIFY = True
+            print(f"[日志] 🎯 成功对接青龙内置通知模块，路径: {ql_path}")
             break
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[日志] 尝试从 {ql_path} 导入失败: {e}")
 
 if not HAS_NOTIFY:
-    print("⚠️ 提示：未动态检测到青龙 sendNotify.py 模块，通知将仅在控制台打印。")
+    print("⚠️ 提示：未成功加载 scripts 目录下的 sendNotify.py 模块，通知将仅在控制台打印。")
 
 
 def log(message):
@@ -69,11 +78,9 @@ def extract_base_and_suffix(filename):
     
     if match:
         base_id = match.group(1)
-        # 获取除了基础番号外剩余的后缀部分
         suffix = name_without_ext[len(base_id):]
         return base_id, suffix
     else:
-        # 如果不符合上述结构，认为它本身就是基础番号
         return name_without_ext, ""
 
 
@@ -101,16 +108,12 @@ def scan_and_find_duplicates(media_dirs):
                         db[base_id] = {'base_file': None, 'sub_versions': []}
                     
                     if not suffix:
-                        # 找到了无后缀的原版
                         db[base_id]['base_file'] = file
                     else:
-                        # 找到了带后缀的版本
                         db[base_id]['sub_versions'].append(file)
 
-    # 筛选重复项
     duplicates = {}
     for base_id, info in db.items():
-        # 判定条件：原版存在，且至少存在一个带后缀的版本
         if info['base_file'] and info['sub_versions']:
             duplicates[base_id] = {
                 'original': info['base_file'],
@@ -128,10 +131,7 @@ def send_tg_notification(summary, detail_list):
         print("\n".join(detail_list))
         return
 
-    # Telegram 限制一条消息在 4000 字符左右，安全起见我们设单次发送上限为 3000 字符
     MAX_CHAR = 3000
-    
-    # 组合第一条消息（总结 + 头部列表）
     current_message = f"🔔 *🔢视频版本检测报告*\n\n{summary}\n\n"
     current_message += "⚠️ *重复详情列表：*\n"
     
@@ -147,7 +147,6 @@ def send_tg_notification(summary, detail_list):
     if current_message:
         messages_to_send.append(current_message)
         
-    # 依次调用青龙通知接口发送
     for idx, msg in enumerate(messages_to_send):
         title = f"🔢视频版本检测 ({idx + 1}/{len(messages_to_send)})"
         log(f"✉️ 正在发送第 {idx + 1} 部分通知...")
@@ -157,7 +156,6 @@ def send_tg_notification(summary, detail_list):
 def main():
     log("🚀 脚本启动，准备执行重复 STMR 检测...")
     
-    # 读取环境变量
     media_dir_env = os.environ.get("MEDIA_DIR")
     if not media_dir_env:
         log("❌ 错误: 未配置环境变量 `MEDIA_DIR`。请在青龙环境变量中添加该变量并填写飞牛 strm 目录路径。")
@@ -165,11 +163,9 @@ def main():
             send_notification("🔢视频版本检测失败", "未配置环境变量 `MEDIA_DIR`，脚本已中止。")
         sys.exit(1)
         
-    # 支持逗号分隔多路径
     media_dirs = media_dir_env.split(',')
     log(f"📋 待扫描路径列表: {media_dirs}")
     
-    # 执行扫描
     duplicates = scan_and_find_duplicates(media_dirs)
     
     if not duplicates:
@@ -179,7 +175,6 @@ def main():
             send_notification("🔢视频版本检测完成", summary_msg)
         sys.exit(0)
         
-    # 存在重复，格式化输出
     total_count = len(duplicates)
     detail_count = sum(len(v['others']) + 1 for v in duplicates.values())
     
@@ -196,7 +191,6 @@ def main():
         detail_list.append(detail)
         print(f"[{base_id}] 重复: 原版[{files['original']}] <-> 冲突{files['others']}")
 
-    # 发送通知
     send_tg_notification(summary_msg, detail_list)
     log("🏁 任务运行结束。")
 
