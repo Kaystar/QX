@@ -145,9 +145,12 @@ def scan_and_find_duplicates(media_dirs, detect_versions):
 
 
 def write_details_to_file(duplicates):
-    """将重复详情写入脚本目录下的文本文件中"""
+    """将重复详情按番号字母顺序（不区分大小写）排序后，写入脚本目录下的文本文件中"""
     current_dir = os.path.dirname(os.path.abspath(__file__))
     result_file_path = os.path.join(current_dir, "🔢视频版本检测结果.txt")
+    
+    # 使用 sorted 进行字典序升序排列，key=lambda x: x[0].lower() 确保排序时不区分大小写
+    sorted_duplicates = sorted(duplicates.items(), key=lambda x: x[0].lower())
     
     try:
         with open(result_file_path, "w", encoding="utf-8") as f:
@@ -156,7 +159,7 @@ def write_details_to_file(duplicates):
             f.write("==================================================\n")
             f.write(f"生成时间: {os.popen('date').read().strip()}\n\n")
             
-            for idx, (base_id, files) in enumerate(duplicates.items(), 1):
+            for idx, (base_id, files) in enumerate(sorted_duplicates, 1):
                 f.write(f"{idx}. 番号: {base_id}\n")
                 # 原档采用蓝色圆形 🔵
                 f.write(f"   🔵 原档: {files['original']}\n")
@@ -199,7 +202,7 @@ def main():
     detail_count = sum(len(v['others']) + 1 for v in duplicates.values())
     
     # 1. 整理控制台日志并保存到本地文件
-    log(f"发现 {total_count} 组重复，开始写入本地文件...")
+    log(f"发现 {total_count} 组重复，开始写入本地文件并进行 A-Z 排序...")
     write_details_to_file(duplicates)
     
     # 2. 组装精简版 Telegram 通知内容
@@ -208,7 +211,7 @@ def main():
         f"- 共发现 **{total_count}** 组存在冲突的番号\n"
         f"- 涉及重复 strm 文件共 **{detail_count}** 个。\n\n"
         f"📝 *温馨提示：*\n"
-        f"详细的重复名单已写入脚本目录下的 `🔢视频版本检测结果.txt` 文件中，请前往青龙面板“脚本管理”或前往对应文件夹查看。"
+        f"详细的重复名单已写入脚本目录下的 `🔢视频版本检测结果.txt` 文件中，并已按字母 A-Z 顺序排列完毕，请前往查看。"
     )
     
     # 3. 发送单条总结通知
