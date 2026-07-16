@@ -25,7 +25,7 @@ new Env('🔢视频版本检测');
 
 青龙通知与结果：
 - 消息轰炸优化：Telegram 通知中【仅发送总结数据】，不再发送详细列表。
-- 详细结果查看：具体的重复番号列表将自动写入脚本同级目录下的 `🔢视频版本检测结果.txt` 文件中。
+- 详细结果查看：具体的重复番号列表将自动写入脚本同级目录下的 `🔢视频版本检测结果.txt` 文件中，同时完整打印到控制台日志。
 =========================================
 """
 
@@ -51,7 +51,7 @@ def send_notify(title, content):
 
 
 def log(message):
-    """打印详细运行日志"""
+    """打印运行日志"""
     print(f"[日志] {message}")
 
 
@@ -91,7 +91,7 @@ def get_version_info(suffix):
 
 
 def scan_and_find_duplicates(media_dirs, detect_versions):
-    """扫描目录并输出详细日志"""
+    """扫描目录，找出重复版本（无繁琐过程日志）"""
     db = {}
     
     # 解析过滤后缀列表
@@ -124,20 +124,13 @@ def scan_and_find_duplicates(media_dirs, detect_versions):
                         db[base_id] = {'base_file': None, 'sub_versions': []}
                     
                     if not suffix:
-                        # 找到了无后缀的原档
                         db[base_id]['base_file'] = file
-                        log(f" 🟩 发现原档: {file} -> 解析基础番号: {base_id}")
                     else:
-                        # 过滤逻辑：如果启用了过滤，且当前后缀不在允许列表中，直接忽略
                         if filter_enabled and suffix.strip().upper() not in allowed_suffixes:
-                            log(f" ⬜ 忽略后缀版本(不在检测列表中): {file} -> 基础番号: {base_id}, 后缀: {suffix}")
                             continue
-                        
                         db[base_id]['sub_versions'].append((file, suffix))
-                        log(f" 🟨 记录匹配后缀版本: {file} -> 基础番号: {base_id}, 后缀: {suffix}")
 
     duplicates = {}
-    log("📝 正在进行最终的重复匹配计算...")
     for base_id, info in db.items():
         # 判定条件：原档存在，且至少存在一个被允许参与检测的后缀版本
         if info['base_file'] and info['sub_versions']:
@@ -145,36 +138,45 @@ def scan_and_find_duplicates(media_dirs, detect_versions):
                 'original': info['base_file'],
                 'others': info['sub_versions']
             }
-            log(f" 🚨 发现重复组! 番号: {base_id} -> 原档 [{info['base_file']}] 共存后缀版本 {[v[0] for v in info['sub_versions']]}")
             
     return duplicates
 
 
-def write_details_to_file(duplicates):
-    """将重复详情按番号字母顺序（不区分大小写）排序后，写入脚本目录下的文本文件中"""
+def write_and_log_details(duplicates):
+    """将重复详情按番号字母顺序排序，写入文本文件，并同步打印到运行日志中"""
     current_dir = os.path.dirname(os.path.abspath(__file__))
     result_file_path = os.path.join(current_dir, "🔢视频版本检测结果.txt")
     
     # 使用 sorted 进行字典序升序排列
     sorted_duplicates = sorted(duplicates.items(), key=lambda x: x[0].lower())
     
+    report_lines = []
+    report_lines.append("==================================================")
+    report_lines.append("               🔢 视频版本检测详细报告")
+    report_lines.append("==================================================")
+    report_lines.append(f"生成时间: {os.popen('date').read().strip()}\n")
+    
+    for idx, (base_id, files) in enumerate(sorted_duplicates, 1):
+        report_lines.append(f"{idx}. 番号: {base_id}")
+        report_lines.append(f"   🔵 原档: {files['original']}")
+        
+        # 遍历并输出具体的冲突后缀
+        for other_file, suffix in files['others']:
+            emoji, tag_name = get_version_info(suffix)
+            report_lines.append(f"   {emoji} {tag_name}: {other_file}")
+        report_lines.append("-" * 40)
+        
+    full_report = "\n".join(report_lines)
+    
+    # 1. 打印在控制台日志里
+    print("\n" + "="*20 + " 📝 冲突明细报告 " + "="*20)
+    print(full_report)
+    print("="*55 + "\n")
+    
+    # 2. 写入本地文件
     try:
         with open(result_file_path, "w", encoding="utf-8") as f:
-            f.write("==================================================\n")
-            f.write("               🔢 视频版本检测详细报告\n")
-            f.write("==================================================\n")
-            f.write(f"生成时间: {os.popen('date').read().strip()}\n\n")
-            
-            for idx, (base_id, files) in enumerate(sorted_duplicates, 1):
-                f.write(f"{idx}. 番号: {base_id}\n")
-                f.write(f"   🔵 原档: {files['original']}\n")
-                
-                # 遍历并输出具体的冲突后缀
-                for other_file, suffix in files['others']:
-                    emoji, tag_name = get_version_info(suffix)
-                    f.write(f"   {emoji} {tag_name}: {other_file}\n")
-                f.write("-" * 40 + "\n")
-                
+            f.write(full_report + "\n")
         log(f"💾 详细重复列表已成功写入文件: {result_file_path}")
     except Exception as e:
         log(f"❌ 写入结果文件失败: {e}")
@@ -206,11 +208,10 @@ def main():
     total_count = len(duplicates)
     detail_count = sum(len(v['others']) + 1 for v in duplicates.values())
     
-    # 1. 整理控制台日志并保存到本地文件
-    log(f"发现 {total_count} 组重复，开始写入本地文件并进行 A-Z 排序...")
-    write_details_to_file(duplicates)
+    # 整理结果并【写入文件 + 打印控制台日志】
+    write_and_log_details(duplicates)
     
-    # 2. 组装精简版 Telegram 通知内容
+    # 组装精简版 Telegram 通知内容
     summary_msg = (
         f"📊 *检测结果总结：*\n"
         f"- 共发现 **{total_count}** 组存在冲突的番号\n"
@@ -219,7 +220,7 @@ def main():
         f"详细的重复名单已写入脚本目录下的 `🔢视频版本检测结果.txt` 文件中，并已按字母 A-Z 顺序排列完毕，请前往查看。"
     )
     
-    # 3. 发送单条总结通知
+    # 发送单条总结通知
     log("✉️ 正在发送总结通知...")
     send_notify("🔢视频版本检测报告", summary_msg)
     log("🏁 任务运行结束。")
