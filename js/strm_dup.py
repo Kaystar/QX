@@ -34,6 +34,7 @@ import sys
 # 精准锁定并导入青龙 scripts 目录下的通知模块
 # ==========================================
 HAS_NOTIFY = False
+send_notification = None
 
 possible_paths = [
     '/ql/data/scripts', 
@@ -47,12 +48,24 @@ for ql_path in possible_paths:
     if os.path.exists(os.path.join(ql_path, 'sendNotify.py')):
         sys.path.append(ql_path)
         try:
-            from sendNotify import send_notification
+            # 兼容性导入：先尝试标准青龙的 sendNotify 函数
+            from sendNotify import sendNotify
+            send_notification = sendNotify
             HAS_NOTIFY = True
-            print(f"[日志] 🎯 成功对接青龙内置通知模块，路径: {ql_path}")
+            print(f"[日志] 🎯 成功对接青龙内置通知模块 (sendNotify)，路径: {ql_path}")
             break
+        except ImportError:
+            try:
+                # 再尝试部分旧版或魔改版的 send_notification 函数
+                from sendNotify import send_notification as send_notif
+                send_notification = send_notif
+                HAS_NOTIFY = True
+                print(f"[日志] 🎯 成功对接青龙内置通知模块 (send_notification)，路径: {ql_path}")
+                break
+            except Exception as e:
+                print(f"[日志] 尝试从 {ql_path} 导入失败: {e}")
         except Exception as e:
-            print(f"[日志] 尝试从 {ql_path} 导入失败: {e}")
+            print(f"[日志] 尝试从 {ql_path} 导入未知错误: {e}")
 
 if not HAS_NOTIFY:
     print("⚠️ 提示：未成功加载 scripts 目录下的 sendNotify.py 模块，通知将仅在控制台打印。")
@@ -125,7 +138,7 @@ def scan_and_find_duplicates(media_dirs):
 
 def send_tg_notification(summary, detail_list):
     """分包发送 Telegram 通知"""
-    if not HAS_NOTIFY:
+    if not HAS_NOTIFY or not send_notification:
         log("📢 [未发送通知] 因未找到 sendNotify.py 模块，结果直接在下方展示：")
         print(summary)
         print("\n".join(detail_list))
@@ -150,7 +163,10 @@ def send_tg_notification(summary, detail_list):
     for idx, msg in enumerate(messages_to_send):
         title = f"🔢视频版本检测 ({idx + 1}/{len(messages_to_send)})"
         log(f"✉️ 正在发送第 {idx + 1} 部分通知...")
-        send_notification(title, msg)
+        try:
+            send_notification(title, msg)
+        except Exception as e:
+            log(f"❌ 发送通知时发生异常: {e}")
 
 
 def main():
@@ -159,7 +175,7 @@ def main():
     media_dir_env = os.environ.get("MEDIA_DIR")
     if not media_dir_env:
         log("❌ 错误: 未配置环境变量 `MEDIA_DIR`。请在青龙环境变量中添加该变量并填写飞牛 strm 目录路径。")
-        if HAS_NOTIFY:
+        if HAS_NOTIFY and send_notification:
             send_notification("🔢视频版本检测失败", "未配置环境变量 `MEDIA_DIR`，脚本已中止。")
         sys.exit(1)
         
@@ -171,7 +187,7 @@ def main():
     if not duplicates:
         summary_msg = "✅ 扫描完成！未发现【原版与多版本共存】的重复 strm 文件。"
         log(summary_msg)
-        if HAS_NOTIFY:
+        if HAS_NOTIFY and send_notification:
             send_notification("🔢视频版本检测完成", summary_msg)
         sys.exit(0)
         
