@@ -31,44 +31,24 @@ import re
 import sys
 
 # ==========================================
-# 精准锁定并导入青龙 scripts 目录下的通知模块
+# 移植自高效 NFO 脚本的通知网络网关加载逻辑
 # ==========================================
-HAS_NOTIFY = False
-send_notification = None
-
-possible_paths = [
-    '/ql/data/scripts', 
-    '/ql/scripts',
-    os.path.abspath(os.path.join(os.path.dirname(__file__), '../../scripts')),
-    os.path.abspath(os.path.join(os.path.dirname(__file__), '../')),
-    os.path.dirname(__file__)
-]
-
-for ql_path in possible_paths:
-    if os.path.exists(os.path.join(ql_path, 'sendNotify.py')):
-        sys.path.append(ql_path)
+def send_notify(title, content):
+    # 遍历青龙所有可能的通知路径并加入到运行环境中
+    for p in ['/ql/data/scripts', '/ql/scripts', '/ql/repo/scripts', os.path.dirname(__file__)]:
+        if os.path.exists(os.path.join(p, 'sendNotify.py')) and p not in sys.path: 
+            sys.path.append(p)
+    try:
+        # 第一重尝试：调用标准的 send 函数
+        from sendNotify import send; send(title, content)
+    except Exception as e:
         try:
-            # 兼容性导入：先尝试标准青龙的 sendNotify 函数
-            from sendNotify import sendNotify
-            send_notification = sendNotify
-            HAS_NOTIFY = True
-            print(f"[日志] 🎯 成功对接青龙内置通知模块 (sendNotify)，路径: {ql_path}")
-            break
-        except ImportError:
-            try:
-                # 再尝试部分旧版或魔改版的 send_notification 函数
-                from sendNotify import send_notification as send_notif
-                send_notification = send_notif
-                HAS_NOTIFY = True
-                print(f"[日志] 🎯 成功对接青龙内置通知模块 (send_notification)，路径: {ql_path}")
-                break
-            except Exception as e:
-                print(f"[日志] 尝试从 {ql_path} 导入失败: {e}")
-        except Exception as e:
-            print(f"[日志] 尝试从 {ql_path} 导入未知错误: {e}")
-
-if not HAS_NOTIFY:
-    print("⚠️ 提示：未成功加载 scripts 目录下的 sendNotify.py 模块，通知将仅在控制台打印。")
+            # 第二重尝试：调用部分青龙版本的 sendNotify 函数
+            from sendNotify import sendNotify; sendNotify(title, content)
+        except Exception: 
+            # 如果都失败了，直接退化为控制台打印
+            print(f"🎉 提示：未检测到青龙内置通知模块或发送失败: {e}")
+            print(f"\n【控制台备份显示 - {title}】\n{content}")
 
 
 def log(message):
@@ -81,11 +61,9 @@ def extract_base_and_suffix(filename):
     解析文件名/番号，拆分为(基础番号, 后缀)
     匹配常见的后缀连接符：-, _, 空格 加上常见后缀如 C, 4k, 1080p, 60fps, CD1, UNCUT 等
     """
-    # 移除文件后缀名
     name_without_ext, _ = os.path.splitext(filename)
     
     # 正则：匹配 [番号] + [分隔符(横杠/下划线/空格)] + [字母/数字后缀]
-    # 例如：ABCD-123-C -> 基础: ABCD-123, 后缀: C
     pattern = re.compile(r'^([a-zA-Z0-9]+-[0-9]+)([-_\s][a-zA-Z0-9]+)+$')
     match = pattern.match(name_without_ext)
     
@@ -137,13 +115,7 @@ def scan_and_find_duplicates(media_dirs):
 
 
 def send_tg_notification(summary, detail_list):
-    """分包发送 Telegram 通知"""
-    if not HAS_NOTIFY or not send_notification:
-        log("📢 [未发送通知] 因未找到 sendNotify.py 模块，结果直接在下方展示：")
-        print(summary)
-        print("\n".join(detail_list))
-        return
-
+    """根据 Telegram 长度规则分包组合通知并发送"""
     MAX_CHAR = 3000
     current_message = f"🔔 *🔢视频版本检测报告*\n\n{summary}\n\n"
     current_message += "⚠️ *重复详情列表：*\n"
@@ -163,10 +135,7 @@ def send_tg_notification(summary, detail_list):
     for idx, msg in enumerate(messages_to_send):
         title = f"🔢视频版本检测 ({idx + 1}/{len(messages_to_send)})"
         log(f"✉️ 正在发送第 {idx + 1} 部分通知...")
-        try:
-            send_notification(title, msg)
-        except Exception as e:
-            log(f"❌ 发送通知时发生异常: {e}")
+        send_notify(title, msg)
 
 
 def main():
@@ -175,8 +144,7 @@ def main():
     media_dir_env = os.environ.get("MEDIA_DIR")
     if not media_dir_env:
         log("❌ 错误: 未配置环境变量 `MEDIA_DIR`。请在青龙环境变量中添加该变量并填写飞牛 strm 目录路径。")
-        if HAS_NOTIFY and send_notification:
-            send_notification("🔢视频版本检测失败", "未配置环境变量 `MEDIA_DIR`，脚本已中止。")
+        send_notify("🔢视频版本检测失败", "未配置环境变量 `MEDIA_DIR`，脚本已中止。")
         sys.exit(1)
         
     media_dirs = media_dir_env.split(',')
@@ -187,8 +155,7 @@ def main():
     if not duplicates:
         summary_msg = "✅ 扫描完成！未发现【原版与多版本共存】的重复 strm 文件。"
         log(summary_msg)
-        if HAS_NOTIFY and send_notification:
-            send_notification("🔢视频版本检测完成", summary_msg)
+        send_notify("🔢视频版本检测完成", summary_msg)
         sys.exit(0)
         
     total_count = len(duplicates)
