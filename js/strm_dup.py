@@ -15,6 +15,13 @@ new Env('🔢视频版本检测');
 2. 重复定义：
    - 存在原档 "ABCD-123" 且同时存在指定的后缀版本（如 "ABCD-123-C"）时 -> 算重复。
    - 仅存在多后缀版本，但原档不存在 -> 不算重复。
+3. 排序机制：
+   - 最终输出的报告会严格按照番号字母顺序（A-Z）进行升序排列。
+   - 首字母相同对比次字母，以此类推，且排序时不区分大小写。
+4. 白名单过滤（外部文件形式）：
+   - 脚本会自动读取同级目录下的 `strm_dup_exclude.list` 文件。
+   - 你可以直接在该文件中每行填写一个需要豁免检测的番号，支持用 # 写注释。
+   - 列表中番号不区分大小写，写在里面的番号将彻底不参与检测。
 
 环境变量配置：
 - MEDIA_DIR      : 必须配置。需要扫描的飞牛本地媒体目录绝对路径，多个目录用英文逗号(,)分隔。
@@ -32,6 +39,12 @@ new Env('🔢视频版本检测');
 import os
 import re
 import sys
+
+# 获取脚本所在的当前目录路径
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+# 排除白名单文件路径（已改为英文 strm_dup_exclude.list）
+EXCLUDE_FILE_PATH = os.path.join(CURRENT_DIR, "strm_dup_exclude.list")
+
 
 # ==========================================
 # 移植自高效 NFO 脚本的通知网络网关加载逻辑
@@ -53,6 +66,44 @@ def send_notify(title, content):
 def log(message):
     """打印运行日志"""
     print(f"[日志] {message}")
+
+
+def load_exclude_list():
+    """从外部 list 文件中读取排除白名单，若文件不存在则初始化一个带有示例的文件"""
+    exclude_set = set()
+    
+    # 如果文件不存在，自动创建并写入默认说明和示例
+    if not os.path.exists(EXCLUDE_FILE_PATH):
+        try:
+            with open(EXCLUDE_FILE_PATH, "w", encoding="utf-8") as f:
+                f.write("# ==================================================\n")
+                f.write("# strm_dup_exclude.list (视频版本检测排除白名单)\n")
+                f.write("# 使用说明：\n")
+                f.write("# 1. 每行写一个需要忽略检测的番号，例如：EXMP-001\n")
+                f.write("# 2. 番号不区分大小写\n")
+                f.write("# 3. 行首使用 # 号代表注释，该行将被脚本忽略\n")
+                f.write("# ==================================================\n")
+                f.write("EXMP-001\n")
+                f.write("TEST-999\n")
+            log(f"📝 未检测到排除白名单文件，已自动初始化创建: {EXCLUDE_FILE_PATH}")
+        except Exception as e:
+            log(f"❌ 自动创建排除白名单文件失败: {e}")
+            return exclude_set
+
+    # 开始读取文件内容
+    try:
+        with open(EXCLUDE_FILE_PATH, "r", encoding="utf-8") as f:
+            for line in f:
+                clean_line = line.strip()
+                # 略过空行和以 # 开头的注释行
+                if not clean_line or clean_line.startswith("#"):
+                    continue
+                exclude_set.add(clean_line.lower())
+        log(f"🛡️ 成功从 {os.path.basename(EXCLUDE_FILE_PATH)} 加载了 {len(exclude_set)} 个豁免检测番号")
+    except Exception as e:
+        log(f"❌ 读取排除白名单文件失败: {e}")
+        
+    return exclude_set
 
 
 def extract_base_and_suffix(filename):
@@ -91,8 +142,11 @@ def get_version_info(suffix):
 
 
 def scan_and_find_duplicates(media_dirs, detect_versions):
-    """扫描目录，找出重复版本（无繁琐过程日志）"""
+    """扫描目录，找出重复版本（从外部 list 文件获取白名单过滤）"""
     db = {}
+    
+    # 动态从外部 List 文件获取排除名单
+    exclude_set = load_exclude_list()
     
     # 解析过滤后缀列表
     filter_enabled = False
@@ -120,6 +174,10 @@ def scan_and_find_duplicates(media_dirs, detect_versions):
                 if file.lower().endswith('.strm'):
                     base_id, suffix = extract_base_and_suffix(file)
                     
+                    # 判断基础番号是否在排除白名单内
+                    if base_id.lower() in exclude_set:
+                        continue
+                    
                     if base_id not in db:
                         db[base_id] = {'base_file': None, 'sub_versions': []}
                     
@@ -144,8 +202,7 @@ def scan_and_find_duplicates(media_dirs, detect_versions):
 
 def write_and_log_details(duplicates):
     """将重复详情按番号字母顺序排序，写入文本文件，并同步打印到运行日志中"""
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    result_file_path = os.path.join(current_dir, "🔢视频版本检测结果.txt")
+    result_file_path = os.path.join(CURRENT_DIR, "🔢视频版本检测结果.txt")
     
     # 使用 sorted 进行字典序升序排列
     sorted_duplicates = sorted(duplicates.items(), key=lambda x: x[0].lower())
