@@ -3,7 +3,7 @@
 
 """
 cron: 0 8 * * *
-new Env('🔢视频版本检测');
+new Env('🧩 视频版本检测');
 """
 
 """
@@ -32,7 +32,7 @@ new Env('🔢视频版本检测');
 
 青龙通知与结果：
 - 消息轰炸优化：Telegram 通知中【仅发送总结数据】，不再发送详细列表。
-- 详细结果查看：具体的重复番号列表将自动写入脚本同级目录下的 `🔢视频版本检测结果.txt` 文件中，同时完整打印到控制台日志。
+- 详细结果查看：具体的重复番号列表将自动写入脚本同级目录下的 `🧩视频版本检测结果.txt` 文件中，同时完整打印到控制台日志。
 =========================================
 """
 
@@ -202,14 +202,14 @@ def scan_and_find_duplicates(media_dirs, detect_versions):
 
 def write_and_log_details(duplicates):
     """将重复详情按番号字母顺序排序，写入文本文件，并同步打印到运行日志中"""
-    result_file_path = os.path.join(CURRENT_DIR, "🔢视频版本检测结果.txt")
+    result_file_path = os.path.join(CURRENT_DIR, "🧩视频版本检测结果.txt")
     
     # 使用 sorted 进行字典序升序排列
     sorted_duplicates = sorted(duplicates.items(), key=lambda x: x[0].lower())
     
     report_lines = []
     report_lines.append("==================================================")
-    report_lines.append("               🔢 视频版本检测详细报告")
+    report_lines.append("               🧩 视频版本检测详细报告")
     report_lines.append("==================================================")
     report_lines.append(f"生成时间: {os.popen('date').read().strip()}\n")
     
@@ -245,7 +245,7 @@ def main():
     media_dir_env = os.environ.get("MEDIA_DIR")
     if not media_dir_env:
         log("❌ 错误: 未配置环境变量 `MEDIA_DIR`。请在青龙环境变量中添加该变量并填写飞牛 strm 目录路径。")
-        send_notify("🔢视频版本检测失败", "未配置环境变量 `MEDIA_DIR`，脚本已中止。")
+        send_notify("🧩视频版本检测失败", "未配置环境变量 `MEDIA_DIR`，脚本已中止。")
         sys.exit(1)
         
     # 获取需要检测的版本后缀配置
@@ -259,7 +259,7 @@ def main():
     if not duplicates:
         summary_msg = "✅ 扫描完成！未发现【原档与指定版本共存】的重复 strm 文件。"
         log(summary_msg)
-        send_notify("🔢视频版本检测完成", summary_msg)
+        send_notify("🧩视频版本检测完成", summary_msg)
         sys.exit(0)
         
     total_count = len(duplicates)
@@ -274,12 +274,12 @@ def main():
         f"- 共发现 **{total_count}** 组存在冲突的番号\n"
         f"- 涉及重复 strm 文件共 **{detail_count}** 个。\n\n"
         f"📝 *温馨提示：*\n"
-        f"详细的重复名单已写入脚本目录下的 `🔢视频版本检测结果.txt` 文件中，并已按字母 A-Z 顺序排列完毕，请前往查看。"
+        f"详细的重复名单已写入脚本目录下的 `🧩视频版本检测结果.txt` 文件中，并已按字母 A-Z 顺序排列完毕，请前往查看。"
     )
     
     # 发送单条总结通知
     log("✉️ 正在发送总结通知...")
-    send_notify("🔢视频版本检测报告", summary_msg)
+    send_notify("🧩视频版本检测报告", summary_msg)
     log("🏁 任务运行结束。")
 
 
