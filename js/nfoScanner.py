@@ -3,7 +3,7 @@
 
 """
 cron: 0 3 * * *
-new Env('NFO演员名特殊字符检查');
+new Env('🔍 NFO演员特殊字符检查');
 """
 
 import os
@@ -181,7 +181,7 @@ def send_summary_notification():
             send_notification(f"Emby查询:异常演员清单B Part {part}" if part > 1 else "Emby查询:异常演员清单B(待改类)", "\n".join(chunk))
 
     # --- 阶段 3：发送最终总计报告 ---
-    title = "Emby NFO 查询任务完成报告"
+    title = "🔍 NFO演员特殊字符查询完成"
     summary_lines = [
         f"统计时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "⚠️ 当前运行模式：[仅查询分析，未修改任何物理文件]",
