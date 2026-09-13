@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
+# ql author: AgentRouter
+# ql name: AgentRouter签到
+# ql cron: 0 9 * * *
+# ql desc: AgentRouter 多账号自动签到，确认签到日志并查询签到后最新余额
+
 """
 AgentRouter 自动签到脚本 (青龙面板 / 任意 Python3 环境)
 站点: https://agentrouter.org
